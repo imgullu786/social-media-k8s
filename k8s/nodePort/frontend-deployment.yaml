@@ -2,9 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: frontend-deployment
-  namespace: mern
+  namespace: social-media
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels: { app: frontend }
   template:
@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: your-dockerhub-username/mern-frontend:1.0.0
+          image: gulamgaush/social-media-frontend:latest
           ports:
             - containerPort: 80
           resources:
@@ -24,7 +24,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: frontend
-  namespace: mern
+  namespace: social-media
 spec:
   type: NodePort
   selector:

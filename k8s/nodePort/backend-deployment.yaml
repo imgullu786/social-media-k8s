@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-deployment
+  namespace: social-media
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: backend }
+  template:
+    metadata:
+      labels: { app: backend }
+    spec:
+      containers:
+        - name: backend
+          image: gulamgaush/social-media-backend:latest
+          ports:
+            - containerPort: 5000
+          env:
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: PORT
+            - name: MONGO_URL
+              value: "mongodb://root:root@mongo:27017/mydb?authSource=admin"
+            - name: JWT_SECRET
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: JWT_SECRET
+            - name: JWT_LIFETIME
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: JWT_LIFETIME
+            - name: JWT_COOKIE_EXPIRES
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: JWT_COOKIE_EXPIRES
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: NODE_ENV
+            - name: CLOUDINARY_CLOUD_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secret
+                  key: CLOUDINARY_CLOUD_NAME
+            - name: CLOUDINARY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secret
+                  key: CLOUDINARY_API_KEY
+            - name: CLOUDINARY_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secret
+                  key: CLOUDINARY_API_SECRET
+
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: social-media
+spec:
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - name: http
+      port: 5000
+      targetPort: 5000

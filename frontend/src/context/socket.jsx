@@ -17,10 +17,11 @@ export const SocketContextProvider = ({ children }) => {
     useEffect(()=>{
 
         // const socket = io("http://localhost:5000",{
-        const socket = io("http://frontend:5000",{
-            query:{
-                userId: user?._id
-            }
+        const socket = io({
+            path: "/socket.io",
+            transports: ["websocket"],
+            withCredentials: true,
+            query: { userId: user._id },
         });
         setSocket(socket);
         socket.on('getOnlineUsers', (users) => {

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: mongo-deployment
-  namespace: mern
+  namespace: social-media
 spec:
   replicas: 1
   selector:
@@ -22,12 +22,12 @@ spec:
             - name: MONGO_INITDB_ROOT_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: mongo-secret
+                  name: backend-secret
                   key: MONGO_INITDB_ROOT_USERNAME
             - name: MONGO_INITDB_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: mongo-secret
+                  name: backend-secret
                   key: MONGO_INITDB_ROOT_PASSWORD
           volumeMounts:
             - name: mongo-data
@@ -48,7 +48,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: mongo
-  namespace: mern
+  namespace: social-media
 spec:
   type: ClusterIP
   selector:
