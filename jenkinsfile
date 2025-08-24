@@ -1,0 +1,119 @@
+pipeline {
+  agent any
+  options {
+    skipDefaultCheckout(true)
+    timestamps()
+    ansiColor('xterm')
+  }
+
+  environment {
+    // Docker Hub repo names (override via Jenkins job params if you like)
+    FRONTEND_IMAGE = "DOCKERHUB_USER_PLACEHOLDER/social-media-frontend"
+    BACKEND_IMAGE  = "DOCKERHUB_USER_PLACEHOLDER/social-media-backend"
+
+    // Kubernetes
+    K8S_NAMESPACE = "social-media"
+    K8S_DIR       = "k8s/nodePort"   // or "k8s/ingress"
+  }
+
+  triggers {
+    // Prefer a GitHub webhook; keep a light poll as a fallback
+    pollSCM('H/15 * * * *')
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+        script {
+          // Useful tags
+          env.SHA_TAG   = sh(script: "git rev-parse --short=12 HEAD", returnStdout: true).trim()
+          env.BRANCH_SLUG = env.BRANCH_NAME?.toLowerCase()?.replaceAll('[^a-z0-9._-]','-') ?: "unknown"
+        }
+      }
+    }
+
+    stage('Docker login') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'docker-hub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+          sh '''
+            echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
+          '''
+          script {
+            // Replace placeholder in env images at runtime
+            env.FRONTEND_IMAGE = env.FRONTEND_IMAGE.replace("DOCKERHUB_USER_PLACEHOLDER", DH_USER)
+            env.BACKEND_IMAGE  = env.BACKEND_IMAGE.replace("DOCKERHUB_USER_PLACEHOLDER", DH_USER)
+          }
+        }
+      }
+    }
+
+    stage('Build & Push Images') {
+      parallel {
+        stage('Frontend image') {
+          when { changeset "frontend/**" }
+          steps {
+            dir('frontend') {
+              sh """
+                docker build -t ${env.FRONTEND_IMAGE}:${env.SHA_TAG} -t ${env.FRONTEND_IMAGE}:latest-${env.BRANCH_SLUG} .
+                docker push ${env.FRONTEND_IMAGE}:${env.SHA_TAG}
+                docker push ${env.FRONTEND_IMAGE}:latest-${env.BRANCH_SLUG}
+              """
+            }
+          }
+        }
+        stage('Backend image') {
+          when { changeset "backend/**" }
+          steps {
+            dir('backend') {
+              sh """
+                docker build -t ${env.BACKEND_IMAGE}:${env.SHA_TAG} -t ${env.BACKEND_IMAGE}:latest-${env.BRANCH_SLUG} .
+                docker push ${env.BACKEND_IMAGE}:${env.SHA_TAG}
+                docker push ${env.BACKEND_IMAGE}:latest-${env.BRANCH_SLUG}
+              """
+            }
+          }
+        }
+      }
+    }
+
+    stage('Deploy to Kubernetes') {
+      steps {
+        withCredentials([file(credentialsId: 'kubeconfig-social', variable: 'KUBECONFIG')]) {
+          sh """
+            # Apply (idempotent) all manifests in your chosen dir
+            kubectl --namespace ${env.K8S_NAMESPACE} apply -f ${env.K8S_DIR}
+
+            # Roll deployments to the specific commit image if those images were built in this run.
+            # If a folder didn't change, we keep its existing image.
+
+            if git diff --name-only HEAD~1..HEAD | grep -q '^frontend/'; then
+              kubectl -n ${env.K8S_NAMESPACE} set image deployment/frontend-deployment \
+                frontend=${env.FRONTEND_IMAGE}:${env.SHA_TAG} --record
+            fi
+
+            if git diff --name-only HEAD~1..HEAD | grep -q '^backend/'; then
+              kubectl -n ${env.K8S_NAMESPACE} set image deployment/backend-deployment \
+                backend=${env.BACKEND_IMAGE}:${env.SHA_TAG} --record
+            fi
+
+            # Wait for rollouts to finish (fail fast if they don't)
+            kubectl -n ${env.K8S_NAMESPACE} rollout status deployment/frontend-deployment --timeout=120s || true
+            kubectl -n ${env.K8S_NAMESPACE} rollout status deployment/backend-deployment  --timeout=120s || true
+          """
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      sh 'docker logout || true'
+    }
+    success {
+      echo "Deployed images: "
+      echo "  ${env.FRONTEND_IMAGE}:${env.SHA_TAG}"
+      echo "  ${env.BACKEND_IMAGE}:${env.SHA_TAG}"
+    }
+  }
+}
